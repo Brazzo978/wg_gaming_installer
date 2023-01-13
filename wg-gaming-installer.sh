@@ -66,6 +66,9 @@ function installQuestions() {
 	fi
 	read -rp "IPv4 or IPv6 public address: " -e -i "${SERVER_PUB_IP}" SERVER_PUB_IP
 
+	# Add dedicated IPv4 Address
+	read -rp "IPv4 dedicated address (leave empty to skip): " -e -i "${DEDICATED_PUB_IP}" DEDICATED_PUB_IP
+	
 	# Detect public interface and pre-fill for the user
 	SERVER_NIC="$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)"
 	until [[ ${SERVER_PUB_NIC} =~ ^[a-zA-Z0-9_]+$ ]]; do
@@ -171,7 +174,38 @@ SERVER_PORT=${SERVER_PORT}
 SERVER_PRIV_KEY=${SERVER_PRIV_KEY}
 SERVER_PUB_KEY=${SERVER_PUB_KEY}
 CLIENT_DNS_1=${CLIENT_DNS_1}
-CLIENT_DNS_2=${CLIENT_DNS_2}" > "/etc/wireguard/params"
+CLIENT_DNS_2=${CLIENT_DNS_2}
+DEDICATED_PUB_IP=${DEDICATED_PUB_IP}" > "/etc/wireguard/params"
+
+if [[ $DEDICATED_PUB_IP  =~ (([01]{,1}[0-9]{1,2}|2[0-4][0-9]|25[0-5])\.([01]{,1}[0-9]{1,2}|2[0-4][0-9]|25[0-5])\.([01]{,1}[0-9]{1,2}|2[0-4][0-9]|25[0-5])\.([01]{,1}[0-9]{1,2}|2[0-4][0-9]|25[0-5]))$ ]]; then 
+
+	# Add server interface
+	echo "[Interface]
+Address = ${SERVER_WG_IPV4}/24,${SERVER_WG_IPV6}/64
+ListenPort = ${SERVER_PORT}
+PrivateKey = ${SERVER_PRIV_KEY}
+PostUp = /etc/wireguard/add-proxy.sh
+PostDown = /etc/wireguard/del-proxy.sh
+
+[Peer]
+PublicKey = ${CLIENT_PUB_KEY}
+PresharedKey = ${CLIENT_PRE_SHARED_KEY}
+AllowedIPs = ${DEDICATED_PUB_IP}/32,${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}/128" > "/etc/wireguard/${SERVER_WG_NIC}.conf"
+
+# add-proxy.sh and del-proxy.sh
+	echo "#!/bin/bash
+
+ip neigh add proxy ${DEDICATED_PUB_IP} dev ${SERVER_PUB_NIC}" > "/etc/wireguard/add-proxy.sh"
+
+echo "#!/bin/bash
+
+ip neigh del proxy ${DEDICATED_PUB_IP}" > "/etc/wireguard/del-proxy.sh"
+
+	# Add exec permission
+	chmod u+x /etc/wireguard/add-proxy.sh
+	chmod u+x /etc/wireguard/del-proxy.sh
+
+else
 
 	# Add server interface
 	echo "[Interface]
@@ -204,6 +238,8 @@ INSERIRE ARGOMENTI PASS IP DISATTIVAZIONE" > "/etc/wireguard/rm-fullcone-nat.sh"
 	# Add exec permission
 	chmod u+x /etc/wireguard/add-fullcone-nat.sh
 	chmod u+x /etc/wireguard/rm-fullcone-nat.sh
+
+fi
 
 	# Create client file and add the server as a peer
 	echo "[Interface]
@@ -239,6 +275,7 @@ net.ipv6.conf.all.forwarding = 1" >/etc/sysctl.d/wg.conf
 		echo "It is also available in ${HOME_DIR}/${SERVER_WG_NIC}-client-${CLIENT_NAME}.conf"
 	fi
 }
+
 
 function uninstallWg() {
 	echo ""
