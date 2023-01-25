@@ -226,14 +226,12 @@ AllowedIPs = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}/128" > "/etc/wireguard/${SER
 iptables -A FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
 iptables -A FORWARD -i ${SERVER_WG_NIC} -j ACCEPT
 iptables -t nat -A POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE
-INSERIRE ARGOMENTI PASS IP " > "/etc/wireguard/add-fullcone-nat.sh"
 
 echo "#!/bin/bash
 
 iptables -D FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
 iptables -D FORWARD -i ${SERVER_WG_NIC} -j ACCEPT
 iptables -t nat -D POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE
-INSERIRE ARGOMENTI PASS IP DISATTIVAZIONE" > "/etc/wireguard/rm-fullcone-nat.sh"
 
 	# Add exec permission
 	chmod u+x /etc/wireguard/add-fullcone-nat.sh
