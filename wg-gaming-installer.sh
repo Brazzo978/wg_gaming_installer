@@ -87,14 +87,6 @@ function installQuestions() {
 		read -rp "Server's WireGuard IPv6: " -e -i fd42:42:42::1 SERVER_WG_IPV6
 	done
 	
-	
-	# Check if ssh is in range
-	#if [[ (${SSH_CLIENT##* } -ge 1 && ${SSH_CLIENT##* } -le 65500 ) ]]; then
-	#	read -p "BE ADVISED! SSH Port will be changed from ${SSH_CLIENT##* } to 65522!"
-	#	sed -i 's/#Port\s\+[0-9]\+/Port 65522/' /etc/ssh/sshd_config
-	# Restart ssh service
-		#systemctl restart ssh.service
-	#fi
 
 	# Generate random number within private ports range
 	RANDOM_PORT=$(shuf -i65523-65535 -n1)
