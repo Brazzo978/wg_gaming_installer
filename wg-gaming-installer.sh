@@ -135,12 +135,12 @@ function installQuestions() {
 		read -rp "Server's WireGuard port [65500-65535(65522 used by ssh)]: " -e -i "${RANDOM_PORT}" SERVER_PORT
 	done
 
-	# Cloudflare DNS by default
+	# Cloudflare and Google DNS by default
 	until [[ ${CLIENT_DNS_1} =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; do
 		read -rp "First DNS resolver to use for the clients: " -e -i 1.1.1.1 CLIENT_DNS_1
 	done
 	until [[ ${CLIENT_DNS_2} =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; do
-		read -rp "Second DNS resolver to use for the clients (optional): " -e -i 1.0.0.1 CLIENT_DNS_2
+		read -rp "Second DNS resolver to use for the clients (optional): " -e -i 8.8.8.8 CLIENT_DNS_2
 		if [[ ${CLIENT_DNS_2} == "" ]]; then
 			CLIENT_DNS_2="${CLIENT_DNS_1}"
 		fi
@@ -488,11 +488,12 @@ function manageMenu() {
 	echo "   1) Add a new user"
 	echo "   2) List all users"
 	echo "   3) Revoke existing user"
-	echo "   4) Add port/range forward to user(WIP)"
-	echo "   5) Uninstall WireGuard"
-	echo "   6) Exit"
-	until [[ ${MENU_OPTION} =~ ^[1-6]$ ]]; do
-		read -rp "Select an option [1-6]: " MENU_OPTION
+	echo "   4) Add port forward to existing user"
+	echo "   5) Use a provided routed IPv6 subnet (disable masquerading to server ipv6)"
+	echo "   6) Uninstall WireGuard"
+	echo "   7) Exit"
+	until [[ ${MENU_OPTION} =~ ^[1-7]$ ]]; do
+		read -rp "Select an option [1-7]: " MENU_OPTION
 	done
 	case "${MENU_OPTION}" in
 	1)
@@ -508,9 +509,12 @@ function manageMenu() {
 		addPortForward
 		;;
 	5)
-		uninstallWg
+		useRoutedIpv6Subnet
 		;;
 	6)
+		uninstallWg
+		;;
+	7)
 		exit 0
 		;;
 	esac
@@ -526,3 +530,12 @@ if [[ -e /etc/wireguard/params ]]; then
 else
 	installWireGuard
 fi
+
+
+function useRoutedIpv6Subnet() {
+    
+}
+
+function addPortForward() {
+    
+}
