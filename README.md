@@ -16,9 +16,9 @@ wget https://raw.githubusercontent.com/Brazzo978/wg_gaming_installer/simple_tunn
 bash ./wg-gaming-installer.sh
 ```
 
-It will install WireGuard (kernel module and tools) on the server, configure it, create a systemd service and a client configuration file.
+It will install WireGuard (kernel module and tools) on the server, configure it, create a systemd service.
 
-## Stop / Restart / Uninstal
+## Stop / Restart / Uninstal / Add user / Remove user
 
 Run the script again will give you these options!
 
