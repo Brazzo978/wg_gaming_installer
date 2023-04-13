@@ -489,11 +489,13 @@ function manageMenu() {
 	echo "   2) List all users"
 	echo "   3) Revoke existing user"
 	echo "   4) Add port forward to existing user"
-	echo "   5) Use a provided routed IPv6 subnet (disable masquerading to server ipv6)"
-	echo "   6) Uninstall WireGuard"
-	echo "   7) Exit"
-	until [[ ${MENU_OPTION} =~ ^[1-7]$ ]]; do
-		read -rp "Select an option [1-7]: " MENU_OPTION
+	echo "   5) Remove port forward from existing user"
+	echo "   6) Use a provided routed IPv6 subnet (disable masquerading to server ipv6)"
+	echo "   7) Remove 6 (enable masquerading to server ipv6)"
+	echo "   8) Uninstall WireGuard"
+	echo "   9) Exit"
+	until [[ ${MENU_OPTION} =~ ^[1-9]$ ]]; do
+		read -rp "Select an option [1-9]: " MENU_OPTION
 	done
 	case "${MENU_OPTION}" in
 	1)
@@ -509,16 +511,23 @@ function manageMenu() {
 		addPortForward
 		;;
 	5)
-		useRoutedIpv6Subnet
+		removePortForward
 		;;
 	6)
-		uninstallWg
+		useRoutedIpv6Subnet
 		;;
 	7)
+		removeRoutedIpv6Subnet
+		;;
+	8)
+		uninstallWg
+		;;
+	9)
 		exit 0
 		;;
 	esac
 }
+
 
 # Check for root, virt, OS...
 initialCheck
@@ -533,9 +542,70 @@ fi
 
 
 function useRoutedIpv6Subnet() {
-    
+    sed -i '/ip6tables -t nat -A POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE/d' /etc/wireguard/add-nat.sh
+    sed -i '/ip6tables -t nat -D POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE/d' /etc/wireguard/rm-nat.sh
+    echo "Masquerading rules removed "
+    echo "you might need to reboot the OS to see the changes"
+    echo "To restore them you need to redo from start the installation or put them manually."
 }
 
 function addPortForward() {
-    
+  local CLIENT_IP
+    local PORT_RANGE
+
+    # Loop until a valid IP address is entered
+    while true; do
+        read -p "Enter the IP address of the client: " CLIENT_IP
+        if [[ ! ${CLIENT_IP} =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid IP address. Please try again."
+        else
+            if grep -q "${CLIENT_IP}" "/etc/wireguard/${SERVER_WG_NIC}.conf"; then
+                echo "The IP address ${CLIENT_IP} is in use by a client in the WireGuard config file proceeding."
+				break
+            else
+				echo "the ip you inserted is not used by your wireguard config check the client config"
+				echo "exiting"
+                exit 1
+            fi
+        fi
+    done
+
+	# Loop until a valid port range is entered and the port is in the range 1-65500
+ while true; do
+    read -p "Enter the port or range of ports to forward (e.g. 8080 or 3000-4000): " PORT_RANGE
+    if [[ ! ${PORT_RANGE} =~ ^([1-9][0-9]{0,4})-([1-9][0-9]{0,4})?$ ]]; then
+      echo "Invalid port range. Please try again."
+    else
+      PORT_START=$(echo "${PORT_RANGE}" | cut -d'-' -f1)
+      PORT_END=$(echo "${PORT_RANGE}" | cut -d'-' -f2)
+      if [[ ${PORT_START} -lt 1 || ${PORT_START} -gt 65500 || ${PORT_END} -lt 1 || ${PORT_END} -gt 65500 ]]; then
+        echo "Port range must be between 1 and 65500. Please try again."
+      else
+        echo "QUI INSERIRE LA REGOLA IPTABLES CON ${PORT_START} ${PORT_END} ${CLIENT_IP}" >> /etc/wireguard/add-nat.sh
+        break
+      fi
+    fi
+  done
+
+}
+
+function removeRoutedIpv6Subnet() {
+      if ! grep -q 'ip6tables -t nat -A POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE' /etc/wireguard/add-nat.sh ; then
+    sed -i '$a\ip6tables -t nat -A POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE' /etc/wireguard/add-nat.sh
+    echo "Added back MASQUERADE rule to /etc/wireguard/add-nat.sh"
+	echo "you will need to reboot to apply changes"
+else
+    echo "ip6tables MASQUERADE rule already exists in /etc/wireguard/add-nat.sh"
+	echo "you dont need to add it again"
+fi
+
+if ! grep -q '/ip6tables -t nat -D POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE' /etc/wireguard/rm-nat.sh ; then
+    sed -i '$a\/ip6tables -t nat -D POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE' /etc/wireguard/rm-nat.sh
+    echo "Added back MASQUERADE rule to /etc/wireguard/rm-nat.sh"
+	echo "you will need to reboot to apply changes"
+else
+    echo "ip6tables MASQUERADE rule already exists in /etc/wireguard/rm-nat.sh"
+	echo "you dont need to add it again"
+fi
+
 }
