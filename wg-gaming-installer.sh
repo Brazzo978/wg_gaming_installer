@@ -249,6 +249,8 @@ ip6tables -t nat -D POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE" > "/etc/wire
 
     chmod u+x /etc/wireguard/add-nat.sh
 	chmod u+x /etc/wireguard/rm-nat.sh
+	cp "/etc/wireguard/add-nat.sh" "/etc/wireguard/add-nat.sh.back"
+	cp "/etc/wireguard/rm-nat.sh" "/etc/wireguard/rm-nat.sh.back"
 
 	# Enable routing on the server
 	echo "net.ipv4.ip_forward = 1
@@ -487,11 +489,11 @@ function manageMenu() {
 	echo "What do you want to do?"
 	echo "   1) Add a new user"
 	echo "   2) List all users"
-	echo "   3) Revoke existing user"
-	echo "   4) Add port forward to existing user"
-	echo "   5) Remove port forward from existing user"
+	echo "   3) Remove existing user"
+	echo "   4) Add port forwarding to a user"
+	echo "   5) Remove all port forwarding "
 	echo "   6) Use a provided routed IPv6 subnet (disable masquerading to server ipv6)"
-	echo "   7) Remove 6 (enable masquerading to server ipv6)"
+	echo "   7) Remove option 6 (enable masquerading to server ipv6)"
 	echo "   8) Uninstall WireGuard"
 	echo "   9) Exit"
 	until [[ ${MENU_OPTION} =~ ^[1-9]$ ]]; do
@@ -541,14 +543,6 @@ else
 fi
 
 
-function useRoutedIpv6Subnet() {
-    sed -i '/ip6tables -t nat -A POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE/d' /etc/wireguard/add-nat.sh
-    sed -i '/ip6tables -t nat -D POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE/d' /etc/wireguard/rm-nat.sh
-    echo "Masquerading rules removed "
-    echo "you might need to reboot the OS to see the changes"
-    echo "To restore them you need to redo from start the installation or put them manually."
-}
-
 function addPortForward() {
   local CLIENT_IP
     local PORT_RANGE
@@ -572,8 +566,8 @@ function addPortForward() {
 
 	# Loop until a valid port range is entered and the port is in the range 1-65500
  while true; do
-    read -p "Enter the port or range of ports to forward (e.g. 8080 or 3000-4000): " PORT_RANGE
-    if [[ ! ${PORT_RANGE} =~ ^([1-9][0-9]{0,4})-([1-9][0-9]{0,4})?$ ]]; then
+    read -p "Enter the port or range of ports to forward (e.g. 8080-8080 for single port or 3000-4000 for a range): " PORT_RANGE
+    if [[ ! ${PORT_RANGE} =~ ^([1-9][0-9]{0,4})-([1-9][0-9]{0,4})$ ]]; then
       echo "Invalid port range. Please try again."
     else
       PORT_START=$(echo "${PORT_RANGE}" | cut -d'-' -f1)
@@ -581,12 +575,21 @@ function addPortForward() {
       if [[ ${PORT_START} -lt 1 || ${PORT_START} -gt 65500 || ${PORT_END} -lt 1 || ${PORT_END} -gt 65500 ]]; then
         echo "Port range must be between 1 and 65500. Please try again."
       else
-        echo "QUI INSERIRE LA REGOLA IPTABLES CON ${PORT_START} ${PORT_END} ${CLIENT_IP}" >> /etc/wireguard/add-nat.sh
+        echo "iptables -t nat -A PREROUTING -i ${SERVER_PUB_NIC} -p udp --dport ${PORT_START}:${PORT_END} -j DNAT --to-destination ${CLIENT_IP}:${PORT_START}-${PORT_END}" >> /etc/wireguard/add-nat.sh
+		echo "QUI INSERIRE LA REGOLA IPTABLES CON ${PORT_START} ${PORT_END} ${CLIENT_IP}" >> /etc/wireguard/rm-nat.sh
         break
       fi
     fi
   done
 
+}
+
+function useRoutedIpv6Subnet() {
+    sed -i '/ip6tables -t nat -A POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE/d' /etc/wireguard/add-nat.sh
+    sed -i '/ip6tables -t nat -D POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE/d' /etc/wireguard/rm-nat.sh
+    echo "Masquerading rules removed "
+    echo "you will need to reboot to apply changes"
+    echo "To restore them you need to redo from start the installation or put them manually."
 }
 
 function removeRoutedIpv6Subnet() {
@@ -607,5 +610,15 @@ else
     echo "ip6tables MASQUERADE rule already exists in /etc/wireguard/rm-nat.sh"
 	echo "you dont need to add it again"
 fi
+
+}
+
+
+function removePortForward() {
+echo "Restoring original iptables rules file "
+echo "all port forwarding have been removed."
+echo "you will need to reboot to apply changes."
+cp -f "/etc/wireguard/add-nat.sh.back" "/etc/wireguard/add-nat.sh"
+cp -f "/etc/wireguard/rm-nat.sh.back" "/etc/wireguard/rm-nat.sh"
 
 }
