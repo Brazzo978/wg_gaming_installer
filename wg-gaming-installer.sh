@@ -79,11 +79,31 @@ function installQuestions() {
 	until [[ ${SERVER_WG_IPV4} =~ ^([0-9]{1,3}\.){3} ]]; do
 		read -rp "Server's WireGuard IPv4: " -e -i 10.0.0.1 SERVER_WG_IPV4
 	done
+        
+	USE_PUBLIC_IPV6="n"
+ 	CLIENT_WG_IPV6_MASK="128"
+
+    	until [[ ${USE_PUBLIC_IPV6} =~ ^[yn]$ ]]; do
+               read -rp "Do you want to use a public IPv6 subnet? [y/n]: " -e -i "n" USE_PUBLIC_IPV6
+        done
 
 	until [[ ${SERVER_WG_IPV6} =~ ^([a-f0-9]{1,4}:){3,4}: ]]; do
 		read -rp "Server's WireGuard IPv6: " -e -i fd42:42:42::1 SERVER_WG_IPV6
 	done
-	
+
+        if [[ ${USE_PUBLIC_IPV6} == "y" ]]; then
+                until [[ ${CLIENT_WG_IPV6} =~ ^([a-f0-9]{1,4}:){3,4}: ]]; do
+                     read -rp "Client's WireGuard IPv6 (public subnet without mask): " -e -i "fd42:42:42::1" CLIENT_WG_IPV6
+                done
+		while true; do
+                     read -rp "Client's WireGuard IPv6 Subnet Mask 32-64 (e.g., 56): " CLIENT_WG_IPV6_MASK
+                if [[ $CLIENT_WG_IPV6_MASK =~ ^[0-9]+$ && $CLIENT_WG_IPV6_MASK -ge 32 && $CLIENT_WG_IPV6_MASK -le 64 ]]; then
+                     break
+                else
+                     echo "Invalid subnet mask. Please enter a valid value between 32 and 64."
+                fi
+                done
+        fi
 	
 	# Check if ssh is in range
 	if [[ (${SSH_CLIENT##* } -ge 1 && ${SSH_CLIENT##* } -le 65500 ) ]]; then
@@ -158,20 +178,24 @@ function installWireGuard() {
 	BASE_IP=$(echo "$SERVER_WG_IPV4" | awk -F '.' '{ print $1"."$2"."$3 }')
 	CLIENT_WG_IPV4="${BASE_IP}.2"
 	BASE_IP=$(echo "$SERVER_WG_IPV6" | awk -F '::' '{ print $1 }')
-	CLIENT_WG_IPV6="${BASE_IP}::2"
+	if [[ ${USE_PUBLIC_IPV6} == "n" ]]; then
+        CLIENT_WG_IPV6="${BASE_IP}::2"
+        fi
 	HOME_DIR="/root"
 
 	# Save WireGuard settings
-	echo "SERVER_PUB_IP=${SERVER_PUB_IP}
+	 echo "SERVER_PUB_IP=${SERVER_PUB_IP}
 SERVER_PUB_NIC=${SERVER_PUB_NIC}
 SERVER_WG_NIC=${SERVER_WG_NIC}
 SERVER_WG_IPV4=${SERVER_WG_IPV4}
-SERVER_WG_IPV6=${SERVER_WG_IPV6}
+SERVER_WG_IPV6=${CLIENT_WG_IPV6}
 SERVER_PORT=${SERVER_PORT}
 SERVER_PRIV_KEY=${SERVER_PRIV_KEY}
 SERVER_PUB_KEY=${SERVER_PUB_KEY}
 CLIENT_DNS_1=${CLIENT_DNS_1}
-CLIENT_DNS_2=${CLIENT_DNS_2}" > "/etc/wireguard/params"
+CLIENT_DNS_2=${CLIENT_DNS_2}
+USE_PUBLIC_IPV6=${USE_PUBLIC_IPV6}
+CLIENT_WG_IPV6=${CLIENT_WG_IPV6}" > "/etc/wireguard/params"
 
 	# Add server interface
 	echo "[Interface]
@@ -184,9 +208,35 @@ PostDown = /etc/wireguard/rm-fullcone-nat.sh
 [Peer]
 PublicKey = ${CLIENT_PUB_KEY}
 PresharedKey = ${CLIENT_PRE_SHARED_KEY}
-AllowedIPs = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}/128" > "/etc/wireguard/${SERVER_WG_NIC}.conf"
+AllowedIPs = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}/${CLIENT_WG_IPV6_MASK}" > "/etc/wireguard/${SERVER_WG_NIC}.conf"
 
-# add-fullcone-nat.sh and rm-fullcone-nat.sh
+ if [[ ${USE_PUBLIC_IPV6} == "y" ]]; then
+         # add-fullcone-nat.sh and rm-fullcone-nat.sh
+	echo "#!/bin/bash
+
+iptables -A FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
+iptables -A FORWARD -i ${SERVER_WG_NIC} -j ACCEPT
+iptables -t nat -A POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE
+ip6tables -A FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
+ip6tables -A FORWARD -i ${SERVER_WG_NIC} -j ACCEPT
+# DNAT from 1 to 65500 + ICMP
+iptables -t nat -A PREROUTING -i ${SERVER_PUB_NIC} -p udp --dport 1:65521 -j DNAT --to-destination ${CLIENT_WG_IPV4}:1-65521
+iptables -t nat -A PREROUTING -i ${SERVER_PUB_NIC} -p tcp --dport 1:65521 -j DNAT --to-destination ${CLIENT_WG_IPV4}:1-65521
+iptables -t nat -A PREROUTING -s 0.0.0.0/0 -d ${SERVER_PUB_IP} -p icmp --icmp-type echo-request -j DNAT --to ${CLIENT_WG_IPV4}" > "/etc/wireguard/add-fullcone-nat.sh"
+
+echo "#!/bin/bash
+
+iptables -D FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
+iptables -D FORWARD -i ${SERVER_WG_NIC} -j ACCEPT
+iptables -t nat -D POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE
+ip6tables -D FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
+ip6tables -D FORWARD -i ${SERVER_WG_NIC} -j ACCEPT
+# DNAT from 53,80,88,500, 1024 to 65000
+iptables -t nat -D PREROUTING -i ${SERVER_PUB_NIC} -p udp --dport 1:65521 -j DNAT --to-destination ${CLIENT_WG_IPV4}:1-65521
+iptables -t nat -D PREROUTING -i ${SERVER_PUB_NIC} -p tcp --dport 1:65521 -j DNAT --to-destination ${CLIENT_WG_IPV4}:1-65521
+iptables -t nat -D PREROUTING -s 0.0.0.0/0 -d ${SERVER_PUB_IP} -p icmp --icmp-type echo-request -j DNAT --to ${CLIENT_WG_IPV4}" > "/etc/wireguard/rm-fullcone-nat.sh"
+    else
+    # add-fullcone-nat.sh and rm-fullcone-nat.sh
 	echo "#!/bin/bash
 
 iptables -A FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
@@ -216,8 +266,9 @@ iptables -t nat -D PREROUTING -i ${SERVER_PUB_NIC} -p tcp --dport 1:65521 -j DNA
 iptables -t nat -D PREROUTING -s 0.0.0.0/0 -d ${SERVER_PUB_IP} -p icmp --icmp-type echo-request -j DNAT --to ${CLIENT_WG_IPV4}
 ip6tables -t nat -D PREROUTING -i ${SERVER_PUB_NIC} -p udp --dport 1:65521 -j DNAT --to-destination [${CLIENT_WG_IPV6}]:1-65521
 ip6tables -t nat -D PREROUTING -i ${SERVER_PUB_NIC} -p tcp --dport 1:65521 -j DNAT --to-destination [${CLIENT_WG_IPV6}]:1-65521" > "/etc/wireguard/rm-fullcone-nat.sh"
-
-	# Add exec permission
+fi
+	
+ # Add exec permission
 	chmod u+x /etc/wireguard/add-fullcone-nat.sh
 	chmod u+x /etc/wireguard/rm-fullcone-nat.sh
 
