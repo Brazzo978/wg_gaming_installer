@@ -80,7 +80,7 @@ function installQuestions() {
 		read -rp "Server's WireGuard IPv4: " -e -i 10.0.0.1 SERVER_WG_IPV4
 	done
         
-	USE_PUBLIC_IPV6="n"
+	USE_PUBLIC_IPV6="0"
  	CLIENT_WG_IPV6_MASK="128"
 
     	until [[ ${USE_PUBLIC_IPV6} =~ ^[yn]$ ]]; do
@@ -275,7 +275,7 @@ fi
 	# Create client file and add the server as a peer
 	echo "[Interface]
 PrivateKey = ${CLIENT_PRIV_KEY}
-Address = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}/128
+Address = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}/${CLIENT_WG_IPV6_MASK}
 DNS = ${CLIENT_DNS_1},${CLIENT_DNS_2}
 
 [Peer]
